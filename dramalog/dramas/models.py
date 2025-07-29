@@ -18,11 +18,11 @@ class Mood(models.Model):
 class Drama(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField()
-    poster = models.ImageField(upload_to='posters/')
+    poster = models.ImageField(upload_to="posters/", blank=True, null=True)
     release_year = models.IntegerField()
     total_episodes = models.IntegerField()
-    genres = models.ManyToManyField(Genre)
-    moods = models.ManyToManyField(Mood)
+    genres = models.ManyToManyField('Genre', blank=True)
+    moods = models.ManyToManyField('Mood', blank=True)
     spotify_link = models.URLField(blank=True)
 
     def __str__(self):
