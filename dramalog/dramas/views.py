@@ -6,10 +6,15 @@ from rest_framework import status
 from .models import Drama
 from .serializers import DramaSerializer
 from .tmdb_utils import search_kdrama  
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.authentication import TokenAuthentication
+
 
 class DramaViewSet(viewsets.ModelViewSet):
     queryset = Drama.objects.all()
     serializer_class = DramaSerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
 
 
 @api_view(['POST'])
