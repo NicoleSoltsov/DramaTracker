@@ -19,3 +19,4 @@ class ReviewSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         drama = validated_data.pop('drama')
         return Review.objects.create(drama=drama, **validated_data)
+ 
