@@ -6,13 +6,13 @@ from django.contrib.auth import get_user_model
 User = get_user_model()
 
 class Genre(models.Model):
-    name = models.CharField(max_length=50)
+    name = models.CharField(max_length=50, unique=True)
 
     def __str__(self):
         return self.name
 
 class Mood(models.Model):
-    name = models.CharField(max_length=50)
+    name = models.CharField(max_length=50, unique=True)
     emoji = models.CharField(max_length=5)
 
     def __str__(self):

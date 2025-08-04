@@ -2,19 +2,34 @@ from rest_framework import viewsets
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
-
-from .models import Drama
-from .serializers import DramaSerializer
+from rest_framework import generics
+from .models import *
+from .serializers import DramaSerializer, GenreSerializer, MoodSerializer
 from .tmdb_utils import search_kdrama  
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication
 
+class GenreListCreateView(generics.ListCreateAPIView):
+    queryset = Genre.objects.all()
+    serializer_class = GenreSerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+class MoodListCreateView(generics.ListCreateAPIView):
+    queryset = Mood.objects.all()
+    serializer_class = MoodSerializer
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
 
 class DramaViewSet(viewsets.ModelViewSet):
     queryset = Drama.objects.all()
     serializer_class = DramaSerializer
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
 
 
 @api_view(['POST'])

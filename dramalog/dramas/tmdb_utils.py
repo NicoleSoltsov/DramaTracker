@@ -30,12 +30,13 @@ def search_kdrama(title):
         detail_data = detail_response.json()
 
         return {
-            "title": first["name"],
+            "title": first["name"], 
             "description": first["overview"],
             "poster_url": f"https://image.tmdb.org/t/p/w500{first['poster_path']}" if first.get("poster_path") else None,
             "release_year": first["first_air_date"][:4],
             "tmdb_id": tmdb_id,
-            "total_episodes": detail_data.get("number_of_episodes", 0)  # ✅ Fetch actual episode count
+            "total_episodes": detail_data.get("number_of_episodes", 0)
         }
 
     return None
+
