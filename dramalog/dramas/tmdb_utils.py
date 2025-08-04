@@ -20,23 +20,24 @@ def search_kdrama(title):
         first = data["results"][0]
         tmdb_id = first["id"]
 
-        # 🔁 NEW: Fetch full details using ID
+        # 🔁 Fetch full details using ID
         detail_url = f"https://api.themoviedb.org/3/tv/{tmdb_id}"
         detail_params = {
             "api_key": TMDB_API_KEY,
             "language": "en-US"
         }
         detail_response = requests.get(detail_url, params=detail_params)
-        detail_data = detail_response.json()
 
-        return {
-            "title": first["name"], 
-            "description": first["overview"],
-            "poster_url": f"https://image.tmdb.org/t/p/w500{first['poster_path']}" if first.get("poster_path") else None,
-            "release_year": first["first_air_date"][:4],
-            "tmdb_id": tmdb_id,
-            "total_episodes": detail_data.get("number_of_episodes", 0)
-        }
+        if detail_response.status_code == 200:
+            detail_data = detail_response.json()
+            return {
+                "title": first["name"], 
+                "description": first["overview"],
+                "poster_url": f"https://image.tmdb.org/t/p/w500{first['poster_path']}" if first.get("poster_path") else None,
+                "release_year": first["first_air_date"][:4],
+                "tmdb_id": tmdb_id,
+                "total_episodes": detail_data.get("number_of_episodes", 0),
+                "genre_names": [g["name"] for g in detail_data.get("genres", [])]  # ✅ safe to use now
+            }
 
     return None
-

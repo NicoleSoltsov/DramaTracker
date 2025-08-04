@@ -32,6 +32,8 @@ class DramaViewSet(viewsets.ModelViewSet):
 
 
 
+from dramas.models import Genre  # make sure this is at the top
+
 @api_view(['POST'])
 def add_kdrama_by_name(request):
     title = request.data.get('title')
@@ -48,7 +50,7 @@ def add_kdrama_by_name(request):
     if not kdrama_data:
         return Response({"error": "K-drama not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    # Create new drama with the user
+    # Create the new drama object
     drama = Drama.objects.create(
         user=request.user,
         title=kdrama_data["title"],
@@ -57,7 +59,12 @@ def add_kdrama_by_name(request):
         total_episodes=kdrama_data["total_episodes"],
     )
 
-    # Return the created drama as JSON
+    # ✅ Add genres from TMDB
+    genre_names = kdrama_data.get("genre_names", [])
+    for name in genre_names:
+        genre, _ = Genre.objects.get_or_create(name=name)
+        drama.genres.add(genre)
+
+    # Return serialized drama
     serializer = DramaSerializer(drama)
     return Response(serializer.data, status=status.HTTP_201_CREATED)
-
