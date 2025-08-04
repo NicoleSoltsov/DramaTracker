@@ -23,13 +23,19 @@ def add_kdrama_by_name(request):
     if not title:
         return Response({"error": "No title provided"}, status=status.HTTP_400_BAD_REQUEST)
 
+    # Check if this user already posted the drama
+    existing_drama = Drama.objects.filter(user=request.user, title__iexact=title).first()
+    if existing_drama:
+        return Response({"error": "You've already added this drama."}, status=status.HTTP_400_BAD_REQUEST)
+
     # Fetch data from TMDB
     kdrama_data = search_kdrama(title)
     if not kdrama_data:
         return Response({"error": "K-drama not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    # Save it to the database (basic version, no genres/poster file yet)
+    # Create new drama with the user
     drama = Drama.objects.create(
+        user=request.user,
         title=kdrama_data["title"],
         description=kdrama_data["description"],
         release_year=int(kdrama_data["release_year"]),
@@ -39,3 +45,4 @@ def add_kdrama_by_name(request):
     # Return the created drama as JSON
     serializer = DramaSerializer(drama)
     return Response(serializer.data, status=status.HTTP_201_CREATED)
+

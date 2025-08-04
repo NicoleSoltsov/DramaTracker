@@ -22,4 +22,6 @@ urlpatterns = [
     path('api/', include('dramas.urls')),
     path('api/users/', include('users.urls')),
     path('api/tracker/', include('tracker.urls')),
+    path('api/', include('reviews.urls')),
+
 ]
