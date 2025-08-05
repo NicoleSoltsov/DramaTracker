@@ -32,7 +32,7 @@ class DramaViewSet(viewsets.ModelViewSet):
 
 
 
-from dramas.models import Genre  # make sure this is at the top
+from dramas.models import Genre 
 
 @api_view(['POST'])
 def add_kdrama_by_name(request):
@@ -55,6 +55,7 @@ def add_kdrama_by_name(request):
         user=request.user,
         title=kdrama_data["title"],
         description=kdrama_data["description"],
+        poster_url=kdrama_data["poster_url"], 
         release_year=int(kdrama_data["release_year"]),
         total_episodes=kdrama_data["total_episodes"],
     )

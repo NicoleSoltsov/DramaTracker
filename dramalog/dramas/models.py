@@ -22,7 +22,7 @@ class Drama(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='dramas')
     title = models.CharField(max_length=200)
     description = models.TextField()
-    poster = models.ImageField(upload_to="posters/", blank=True, null=True)
+    poster_url = models.URLField(blank=True, null=True, max_length=600)
     release_year = models.IntegerField()
     total_episodes = models.IntegerField()
     genres = models.ManyToManyField('Genre', blank=True)

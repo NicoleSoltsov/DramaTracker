@@ -19,6 +19,7 @@ def search_kdrama(title):
     if data["results"]:
         first = data["results"][0]
         tmdb_id = first["id"]
+        
 
         # 🔁 Fetch full details using ID
         detail_url = f"https://api.themoviedb.org/3/tv/{tmdb_id}"
