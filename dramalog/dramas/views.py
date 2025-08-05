@@ -9,6 +9,7 @@ from .tmdb_utils import search_kdrama
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication
 
+
 class GenreListCreateView(generics.ListCreateAPIView):
     queryset = Genre.objects.all()
     serializer_class = GenreSerializer
@@ -30,9 +31,6 @@ class DramaViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
 
-
-
-from dramas.models import Genre 
 
 @api_view(['POST'])
 def add_kdrama_by_name(request):
