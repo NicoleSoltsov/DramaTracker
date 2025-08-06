@@ -12,6 +12,11 @@ class DramaSerializer(serializers.ModelSerializer):
         slug_field='name',
         queryset=Mood.objects.all()
     )
+    pinterest_search_url = serializers.SerializerMethodField()
+    def get_pinterest_search_url(self, obj):
+        title = obj.title or ""
+        query = f"{title} aesthetic board".replace(" ", "%20")
+        return f"https://www.pinterest.com/search/boards/?q={query}"
 
     class Meta:
         model = Drama

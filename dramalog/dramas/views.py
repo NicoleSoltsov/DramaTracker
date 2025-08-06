@@ -8,6 +8,8 @@ from .serializers import DramaSerializer, GenreSerializer, MoodSerializer
 from .tmdb_utils import search_kdrama  
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication
+from .spotify_utils import get_ost_playlist_url
+
 
 
 class GenreListCreateView(generics.ListCreateAPIView):
@@ -47,6 +49,8 @@ def add_kdrama_by_name(request):
     kdrama_data = search_kdrama(title)
     if not kdrama_data:
         return Response({"error": "K-drama not found"}, status=status.HTTP_404_NOT_FOUND)
+    
+    OST_playlist = get_ost_playlist_url(kdrama_data["title"])
 
     # Create the new drama object
     drama = Drama.objects.create(
@@ -56,9 +60,10 @@ def add_kdrama_by_name(request):
         poster_url=kdrama_data["poster_url"], 
         release_year=int(kdrama_data["release_year"]),
         total_episodes=kdrama_data["total_episodes"],
+        OST_playlist=OST_playlist
     )
 
-    # ✅ Add genres from TMDB
+    # Add genres from TMDB
     genre_names = kdrama_data.get("genre_names", [])
     for name in genre_names:
         genre, _ = Genre.objects.get_or_create(name=name)

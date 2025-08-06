@@ -27,7 +27,9 @@ class Drama(models.Model):
     total_episodes = models.IntegerField()
     genres = models.ManyToManyField('Genre', blank=True)
     moods = models.ManyToManyField('Mood', blank=True)
-    spotify_link = models.URLField(blank=True)
+    OST_playlist = models.URLField(blank=True)
+    pinterest_board_url = models.URLField(blank=True, null=True)
+
 
     class Meta:
         unique_together = ['user', 'title']
