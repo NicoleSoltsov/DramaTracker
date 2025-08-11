@@ -48,7 +48,7 @@ def add_kdrama_by_name(request):
     # Fetch data from TMDB
     kdrama_data = search_kdrama(title)
     if not kdrama_data:
-        return Response({"error": "K-drama not found"}, status=status.HTTP_404_NOT_FOUND)
+        return Response({"error": "Drama not found"}, status=status.HTTP_404_NOT_FOUND)
     
     OST_playlist = get_ost_playlist_url(kdrama_data["title"])
 

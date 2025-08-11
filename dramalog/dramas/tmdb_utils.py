@@ -21,7 +21,7 @@ def search_kdrama(title):
         tmdb_id = first["id"]
         
 
-        # 🔁 Fetch full details using ID
+        # Fetch full details using ID
         detail_url = f"https://api.themoviedb.org/3/tv/{tmdb_id}"
         detail_params = {
             "api_key": TMDB_API_KEY,
@@ -38,7 +38,7 @@ def search_kdrama(title):
                 "release_year": first["first_air_date"][:4],
                 "tmdb_id": tmdb_id,
                 "total_episodes": detail_data.get("number_of_episodes", 0),
-                "genre_names": [g["name"] for g in detail_data.get("genres", [])]  # ✅ safe to use now
+                "genre_names": [g["name"] for g in detail_data.get("genres", [])] 
             }
 
     return None
