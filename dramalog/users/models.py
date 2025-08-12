@@ -8,3 +8,4 @@ class CustomUser(AbstractUser):
     # Optional custom fields
     bio = models.TextField(blank=True)
     profile_pic = models.ImageField(upload_to='profiles/', blank=True, null=True)
+ 

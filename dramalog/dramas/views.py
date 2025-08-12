@@ -1,4 +1,4 @@
-from rest_framework import viewsets
+from rest_framework import viewsets, filters
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
@@ -30,8 +30,21 @@ class DramaViewSet(viewsets.ModelViewSet):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
 
+    search_fields = ['title']
+    filter_backends = [filters.SearchFilter]
+
+    def get_queryset(self):
+        return Drama.objects.filter(user=self.request.user)
+
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+    def get_filter_backends(self):
+        """Only apply search filter on list view, not detail view."""
+        if self.action == 'list':
+            return [filters.SearchFilter]
+        return []
+
 
 
 @api_view(['POST'])
