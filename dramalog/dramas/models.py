@@ -29,10 +29,9 @@ class Drama(models.Model):
     moods = models.ManyToManyField('Mood', blank=True)
     OST_playlist = models.URLField(blank=True)
     pinterest_board_url = models.URLField(blank=True, null=True)
-
-
+    tmdb_id = models.IntegerField(null=True, blank=True, db_index=True)
     class Meta:
-        unique_together = ['user', 'title']
+        unique_together = [('user','tmdb_id')]  # optional
 
     def __str__(self):
         return self.title
