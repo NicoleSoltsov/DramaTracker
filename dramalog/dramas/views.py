@@ -1,16 +1,14 @@
 from rest_framework import viewsets, filters
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework import generics
 from .models import *
 from .serializers import DramaSerializer, GenreSerializer, MoodSerializer
-from .tmdb_utils import search_kdrama, search_kdrama_candidates, fetch_kdrama_by_tmdb_id
+from .tmdb_utils import search_kdrama, search_kdrama_candidates, fetch_kdrama_by_tmdb_id, get_tv_seasons
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication
 from .spotify_utils import get_ost_playlist_url
-
-
 
 class GenreListCreateView(generics.ListCreateAPIView):
     queryset = Genre.objects.all()
@@ -45,9 +43,9 @@ class DramaViewSet(viewsets.ModelViewSet):
             return [filters.SearchFilter]
         return []
 
-
-
 @api_view(['POST'])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def add_kdrama_by_name(request):
     title = (request.data.get('title') or '').strip()
     tmdb_id = request.data.get('tmdb_id')
@@ -103,7 +101,7 @@ def add_kdrama_by_name(request):
         poster_url=kdrama_data.get("poster_url"),
         release_year=release_year,
         total_episodes=kdrama_data.get("total_episodes") or 0,
-        tmdb_id=kdrama_data.get("tmdb_id"),  # <-- store the TMDB id
+        tmdb_id=kdrama_data.get("tmdb_id"),
         OST_playlist=ost_url,
     )
 
@@ -116,8 +114,9 @@ def add_kdrama_by_name(request):
 
     return Response(DramaSerializer(drama).data, status=status.HTTP_201_CREATED)
 
-
 @api_view(["GET"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
 def kdrama_search(request):
     q = (request.query_params.get("q") or "").strip()
     if not q:
@@ -127,3 +126,51 @@ def kdrama_search(request):
         return Response(results, status=status.HTTP_200_OK)
     except Exception:
         return Response({"detail": "TMDB search failed"}, status=status.HTTP_502_BAD_GATEWAY)
+
+# ---------- NEW: Seasons endpoints ----------
+
+@api_view(["GET"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def seasons_by_tmdb_id(request):
+    """
+    GET /api/tmdb/seasons/?tmdb_id=61611
+    Returns: {"tmdb_id": 61611, "seasons": [{season_number, episode_count, ...}, ...]}
+    """
+    tmdb_id = request.query_params.get("tmdb_id")
+    if not tmdb_id:
+        return Response({"error": "tmdb_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+    try:
+        tmdb_id = int(tmdb_id)
+    except ValueError:
+        return Response({"error": "tmdb_id must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        seasons = get_tv_seasons(tmdb_id)
+        seasons = sorted(seasons, key=lambda s: s.get("season_number") or 0)
+        return Response({"tmdb_id": tmdb_id, "seasons": seasons}, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
+@api_view(["GET"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def seasons_by_drama_pk(request, pk: int):
+    """
+    GET /api/dramas/<pk>/seasons/
+    Uses Drama.tmdb_id to fetch TMDB seasons.
+    """
+    try:
+        drama = Drama.objects.get(pk=pk, user=request.user)
+    except Drama.DoesNotExist:
+        return Response({"error": "Drama not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    if not drama.tmdb_id:
+        return Response({"error": "Drama has no tmdb_id"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        seasons = get_tv_seasons(drama.tmdb_id)
+        seasons = sorted(seasons, key=lambda s: s.get("season_number") or 0)
+        return Response({"drama_id": drama.pk, "tmdb_id": drama.tmdb_id, "seasons": seasons}, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({"error": str(e)}, status=status.HTTP_502_BAD_GATEWAY)

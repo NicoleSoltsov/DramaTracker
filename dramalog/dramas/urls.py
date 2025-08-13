@@ -1,6 +1,14 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import DramaViewSet, add_kdrama_by_name, GenreListCreateView, MoodListCreateView, kdrama_search
+from .views import (
+    DramaViewSet,
+    add_kdrama_by_name,
+    GenreListCreateView,
+    MoodListCreateView,
+    kdrama_search,
+    seasons_by_tmdb_id,      # NEW
+    seasons_by_drama_pk,     # NEW
+)
 
 router = DefaultRouter()
 router.register(r'dramas', DramaViewSet)
@@ -10,5 +18,9 @@ urlpatterns = [
     path('kdramas/search/', kdrama_search),
     path('kdramas/add-by-name/', add_kdrama_by_name), 
     path('genres/', GenreListCreateView.as_view(), name='genre-list-create'),
-    path('moods/', MoodListCreateView.as_view(), name='mood-list-create'), 
+    path('moods/', MoodListCreateView.as_view(), name='mood-list-create'),
+
+    # NEW:
+    path('tmdb/seasons/', seasons_by_tmdb_id, name='tmdb-seasons'),
+    path('dramas/<int:pk>/seasons/', seasons_by_drama_pk, name='drama-seasons'),
 ]

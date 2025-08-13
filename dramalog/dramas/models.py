@@ -23,7 +23,7 @@ class Drama(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField()
     poster_url = models.URLField(blank=True, null=True, max_length=600)
-    release_year = models.IntegerField()
+    release_year = models.PositiveIntegerField(null=True, blank=True)
     total_episodes = models.IntegerField()
     genres = models.ManyToManyField('Genre', blank=True)
     moods = models.ManyToManyField('Mood', blank=True)
