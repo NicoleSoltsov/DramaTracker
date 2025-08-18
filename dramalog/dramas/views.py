@@ -4,6 +4,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework import generics
 from .models import *
+from rest_framework.decorators import action   # <-- needed for @action
+from django.db.models import Q  
 from .serializers import DramaSerializer, GenreSerializer, MoodSerializer
 from .tmdb_utils import search_kdrama, search_kdrama_candidates, fetch_kdrama_by_tmdb_id, get_tv_seasons
 from rest_framework.permissions import IsAuthenticated
@@ -33,6 +35,34 @@ class DramaViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         return Drama.objects.filter(user=self.request.user)
+    
+    @action(detail=False, methods=["POST"], url_path="bulk-delete")
+    def bulk_delete(self, request):
+        ids = request.data.get("ids") or []
+        tmdb_ids = request.data.get("tmdb_ids") or []
+
+        if not isinstance(ids, list) or not isinstance(tmdb_ids, list):
+            return Response({"error": "`ids` and `tmdb_ids` must be lists."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        if not ids and not tmdb_ids:
+            return Response({"error": "Provide at least one of `ids` or `tmdb_ids`."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # Only delete the current user's dramas
+        base_qs = Drama.objects.filter(user=request.user)
+
+        q = Q()
+        if ids:
+            q |= Q(id__in=ids)
+        if tmdb_ids:
+            q |= Q(tmdb_id__in=tmdb_ids)
+
+        to_delete = base_qs.filter(q).distinct()
+        count = to_delete.count()
+        to_delete.delete()
+
+        return Response({"deleted": count}, status=status.HTTP_200_OK)
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
@@ -42,6 +72,7 @@ class DramaViewSet(viewsets.ModelViewSet):
         if self.action == 'list':
             return [filters.SearchFilter]
         return []
+    
 
 @api_view(['POST'])
 @authentication_classes([TokenAuthentication])
