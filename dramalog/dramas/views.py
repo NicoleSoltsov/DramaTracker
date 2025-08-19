@@ -1,16 +1,22 @@
-from rest_framework import viewsets, filters
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework import viewsets, filters, status
+from rest_framework.decorators import api_view, authentication_classes, permission_classes, action
 from rest_framework.response import Response
-from rest_framework import status
 from rest_framework import generics
-from .models import *
-from rest_framework.decorators import action   # <-- needed for @action
-from django.db.models import Q  
-from .serializers import DramaSerializer, GenreSerializer, MoodSerializer
-from .tmdb_utils import search_kdrama, search_kdrama_candidates, fetch_kdrama_by_tmdb_id, get_tv_seasons
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.authentication import TokenAuthentication
+
+from django.db.models import Q, Exists, OuterRef, Subquery, Value, DateTimeField
+from django.db.models.functions import Coalesce, Greatest
+
+from .models import *
+from .serializers import DramaSerializer, GenreSerializer, MoodSerializer
+from .tmdb_utils import search_kdrama, search_kdrama_candidates, fetch_kdrama_by_tmdb_id, get_tv_seasons
 from .spotify_utils import get_ost_playlist_url
+
+# Cross-app models for filters/annotations
+from tracker.models import WatchStatus
+from reviews.models import Review
+
 
 class GenreListCreateView(generics.ListCreateAPIView):
     queryset = Genre.objects.all()
@@ -18,11 +24,13 @@ class GenreListCreateView(generics.ListCreateAPIView):
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
 
+
 class MoodListCreateView(generics.ListCreateAPIView):
     queryset = Mood.objects.all()
     serializer_class = MoodSerializer
     authentication_classes = [TokenAuthentication]
     permission_classes = [IsAuthenticated]
+
 
 class DramaViewSet(viewsets.ModelViewSet):
     queryset = Drama.objects.all()
@@ -34,8 +42,124 @@ class DramaViewSet(viewsets.ModelViewSet):
     filter_backends = [filters.SearchFilter]
 
     def get_queryset(self):
-        return Drama.objects.filter(user=self.request.user)
-    
+        """
+        Query params supported:
+
+          search=<str>                 (DRF SearchFilter on 'title')
+
+          status=plan,watching,on_hold,dropped,finished   (from tracker.WatchStatus; comma-separated)
+          genre=Romance,Thriller                           (by Genre.name; comma-separated)
+          length=short|medium|long                         (<=12, 13–24, >=25 episodes)
+          year_decade=2020s|2010s|2000s
+          year_from=<int>&year_to=<int>
+          has_review=true|false                            (Review by YOU exists?)
+
+          my_rating_order=asc|desc                         (order by your Review.rating)
+          order=updated|created|title                      (fallback order when my_rating_order not set)
+                - updated => most recently updated, defined as the max of:
+                              WatchStatus.updated_at (yours) and Review.updated_at (yours).
+                - created => newest first by id (since Drama has no created field)
+                - title   => title A→Z
+        """
+        user = self.request.user
+
+        qs = (
+            Drama.objects
+            .filter(user=user)
+            .prefetch_related('genres')
+        )
+
+        # --- Subqueries/annotations from other apps (scoped to current user) ---
+
+        # Your WatchStatus per (user, drama)
+        ws_sub = WatchStatus.objects.filter(user=user, drama=OuterRef('pk'))
+        latest_ws_dt = Subquery(ws_sub.values('updated_at')[:1])
+
+        # Your latest review (if any)
+        rv_sub = Review.objects.filter(user=user, drama=OuterRef('pk')).order_by('-updated_at')
+        latest_rv_dt = Subquery(rv_sub.values('updated_at')[:1])
+        my_rating_sub = Subquery(rv_sub.values('rating')[:1])
+
+        # Coerce NULLs so Greatest() works predictably
+        very_old = Value("1970-01-01T00:00:00Z", output_field=DateTimeField())
+
+        qs = qs.annotate(
+            has_review=Exists(Review.objects.filter(user=user, drama=OuterRef('pk'))),
+            my_rating=my_rating_sub,
+            latest_update=Greatest(
+                Coalesce(latest_ws_dt, very_old),
+                Coalesce(latest_rv_dt, very_old),
+            ),
+        )
+
+        params = self.request.query_params
+
+        # ---- Filters ----
+
+        # Watch status (via tracker.WatchStatus)
+        statuses = (params.get('status') or '').strip()
+        if statuses:
+            wanted = [s.strip() for s in statuses.split(',') if s.strip()]
+            qs = qs.filter(
+                Exists(
+                    WatchStatus.objects.filter(
+                        user=user,
+                        drama=OuterRef('pk'),
+                        status__in=wanted,
+                    )
+                )
+            )
+
+        # Genre names (comma-separated)
+        genre_names = (params.get('genre') or '').strip()
+        if genre_names:
+            wanted = [g.strip() for g in genre_names.split(',') if g.strip()]
+            qs = qs.filter(genres__name__in=wanted).distinct()
+
+        # Length buckets by total_episodes
+        length = (params.get('length') or '').strip().lower()
+        if length == 'short':
+            qs = qs.filter(total_episodes__lte=12)
+        elif length == 'medium':
+            qs = qs.filter(total_episodes__gte=13, total_episodes__lte=24)
+        elif length == 'long':
+            qs = qs.filter(total_episodes__gte=25)
+
+        # Release decade or explicit range
+        decade = (params.get('year_decade') or '').strip().lower()
+        if decade.endswith('s') and len(decade) == 5 and decade[:4].isdigit():
+            base = int(decade[:4])
+            qs = qs.filter(release_year__gte=base, release_year__lte=base + 9)
+
+        year_from = params.get('year_from')
+        year_to = params.get('year_to')
+        if year_from and year_from.isdigit():
+            qs = qs.filter(release_year__gte=int(year_from))
+        if year_to and year_to.isdigit():
+            qs = qs.filter(release_year__lte=int(year_to))
+
+        # Has review?
+        has_review = (params.get('has_review') or '').strip().lower()
+        if has_review in ('true', 'false'):
+            qs = qs.filter(has_review=(has_review == 'true'))
+
+        # ---- Ordering ----
+
+        my_rating_order = (params.get('my_rating_order') or '').strip().lower()
+        if my_rating_order in ('asc', 'desc'):
+            qs = qs.order_by(('-' if my_rating_order == 'desc' else '') + 'my_rating', '-latest_update', '-id')
+        else:
+            order = (params.get('order') or 'updated').strip().lower()
+            if order == 'title':
+                qs = qs.order_by('title')
+            elif order == 'created':
+                qs = qs.order_by('-id')  # Drama has no created_at; newest first by PK
+            else:
+                # default: most recently updated (watch progress or your review)
+                qs = qs.order_by('-latest_update', '-id')
+
+        return qs
+
     @action(detail=False, methods=["POST"], url_path="bulk-delete")
     def bulk_delete(self, request):
         ids = request.data.get("ids") or []
@@ -72,7 +196,7 @@ class DramaViewSet(viewsets.ModelViewSet):
         if self.action == 'list':
             return [filters.SearchFilter]
         return []
-    
+
 
 @api_view(['POST'])
 @authentication_classes([TokenAuthentication])
@@ -145,6 +269,7 @@ def add_kdrama_by_name(request):
 
     return Response(DramaSerializer(drama).data, status=status.HTTP_201_CREATED)
 
+
 @api_view(["GET"])
 @authentication_classes([TokenAuthentication])
 @permission_classes([IsAuthenticated])
@@ -158,7 +283,8 @@ def kdrama_search(request):
     except Exception:
         return Response({"detail": "TMDB search failed"}, status=status.HTTP_502_BAD_GATEWAY)
 
-# ---------- NEW: Seasons endpoints ----------
+
+# ---------- Seasons endpoints ----------
 
 @api_view(["GET"])
 @authentication_classes([TokenAuthentication])
@@ -182,6 +308,7 @@ def seasons_by_tmdb_id(request):
         return Response({"tmdb_id": tmdb_id, "seasons": seasons}, status=status.HTTP_200_OK)
     except Exception as e:
         return Response({"error": str(e)}, status=status.HTTP_502_BAD_GATEWAY)
+
 
 @api_view(["GET"])
 @authentication_classes([TokenAuthentication])
