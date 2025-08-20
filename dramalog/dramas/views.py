@@ -43,23 +43,9 @@ class DramaViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         """
-        Query params supported:
-
-          search=<str>                 (DRF SearchFilter on 'title')
-
-          status=plan,watching,on_hold,dropped,finished   (from tracker.WatchStatus; comma-separated)
-          genre=Romance,Thriller                           (by Genre.name; comma-separated)
-          length=short|medium|long                         (<=12, 13–24, >=25 episodes)
-          year_decade=2020s|2010s|2000s
-          year_from=<int>&year_to=<int>
-          has_review=true|false                            (Review by YOU exists?)
-
-          my_rating_order=asc|desc                         (order by your Review.rating)
-          order=updated|created|title                      (fallback order when my_rating_order not set)
-                - updated => most recently updated, defined as the max of:
-                              WatchStatus.updated_at (yours) and Review.updated_at (yours).
-                - created => newest first by id (since Drama has no created field)
-                - title   => title A→Z
+        Supports:
+          search, status, genre, length, year_decade, year_from/year_to,
+          has_review, my_rating_order or order.
         """
         user = self.request.user
 
@@ -69,18 +55,14 @@ class DramaViewSet(viewsets.ModelViewSet):
             .prefetch_related('genres')
         )
 
-        # --- Subqueries/annotations from other apps (scoped to current user) ---
-
-        # Your WatchStatus per (user, drama)
+        # Subqueries/annotations (scoped to current user)
         ws_sub = WatchStatus.objects.filter(user=user, drama=OuterRef('pk'))
         latest_ws_dt = Subquery(ws_sub.values('updated_at')[:1])
 
-        # Your latest review (if any)
         rv_sub = Review.objects.filter(user=user, drama=OuterRef('pk')).order_by('-updated_at')
         latest_rv_dt = Subquery(rv_sub.values('updated_at')[:1])
         my_rating_sub = Subquery(rv_sub.values('rating')[:1])
 
-        # Coerce NULLs so Greatest() works predictably
         very_old = Value("1970-01-01T00:00:00Z", output_field=DateTimeField())
 
         qs = qs.annotate(
@@ -94,9 +76,7 @@ class DramaViewSet(viewsets.ModelViewSet):
 
         params = self.request.query_params
 
-        # ---- Filters ----
-
-        # Watch status (via tracker.WatchStatus)
+        # Watch status
         statuses = (params.get('status') or '').strip()
         if statuses:
             wanted = [s.strip() for s in statuses.split(',') if s.strip()]
@@ -110,13 +90,13 @@ class DramaViewSet(viewsets.ModelViewSet):
                 )
             )
 
-        # Genre names (comma-separated)
+        # Genres
         genre_names = (params.get('genre') or '').strip()
         if genre_names:
             wanted = [g.strip() for g in genre_names.split(',') if g.strip()]
             qs = qs.filter(genres__name__in=wanted).distinct()
 
-        # Length buckets by total_episodes
+        # Length
         length = (params.get('length') or '').strip().lower()
         if length == 'short':
             qs = qs.filter(total_episodes__lte=12)
@@ -125,7 +105,7 @@ class DramaViewSet(viewsets.ModelViewSet):
         elif length == 'long':
             qs = qs.filter(total_episodes__gte=25)
 
-        # Release decade or explicit range
+        # Decade or year range
         decade = (params.get('year_decade') or '').strip().lower()
         if decade.endswith('s') and len(decade) == 5 and decade[:4].isdigit():
             base = int(decade[:4])
@@ -143,8 +123,7 @@ class DramaViewSet(viewsets.ModelViewSet):
         if has_review in ('true', 'false'):
             qs = qs.filter(has_review=(has_review == 'true'))
 
-        # ---- Ordering ----
-
+        # Ordering
         my_rating_order = (params.get('my_rating_order') or '').strip().lower()
         if my_rating_order in ('asc', 'desc'):
             qs = qs.order_by(('-' if my_rating_order == 'desc' else '') + 'my_rating', '-latest_update', '-id')
@@ -153,9 +132,8 @@ class DramaViewSet(viewsets.ModelViewSet):
             if order == 'title':
                 qs = qs.order_by('title')
             elif order == 'created':
-                qs = qs.order_by('-id')  # Drama has no created_at; newest first by PK
+                qs = qs.order_by('-id')
             else:
-                # default: most recently updated (watch progress or your review)
                 qs = qs.order_by('-latest_update', '-id')
 
         return qs
@@ -173,7 +151,6 @@ class DramaViewSet(viewsets.ModelViewSet):
             return Response({"error": "Provide at least one of `ids` or `tmdb_ids`."},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        # Only delete the current user's dramas
         base_qs = Drama.objects.filter(user=request.user)
 
         q = Q()
@@ -197,6 +174,21 @@ class DramaViewSet(viewsets.ModelViewSet):
             return [filters.SearchFilter]
         return []
 
+    @action(detail=False, methods=["GET"], url_path="my-genres")
+    def my_genres(self, request):
+        """
+        Returns distinct Genre names used by THIS user's dramas, sorted A→Z.
+        Response: ["Action", "Comedy", ...]
+        """
+        names = (
+            Genre.objects
+            .filter(drama__user=request.user)
+            .order_by("name")
+            .values_list("name", flat=True)
+            .distinct()
+        )
+        return Response(list(names), status=200)
+
 
 @api_view(['POST'])
 @authentication_classes([TokenAuthentication])
@@ -208,7 +200,7 @@ def add_kdrama_by_name(request):
     if not title and not tmdb_id:
         return Response({"error": "No title or tmdb_id provided"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # 1) Resolve kdrama_data (prefer exact TMDB id)
+    # Prefer exact TMDB id
     kdrama_data = None
     if tmdb_id:
         try:
@@ -217,8 +209,8 @@ def add_kdrama_by_name(request):
             return Response({"error": "Invalid tmdb_id"}, status=status.HTTP_400_BAD_REQUEST)
         kdrama_data = fetch_kdrama_by_tmdb_id(tmdb_id)
 
+    # Fallback to title search
     if not kdrama_data:
-        # fallback to title search if ID was missing/failed
         if not title:
             return Response({"error": "Title required when tmdb_id lookup fails"}, status=status.HTTP_400_BAD_REQUEST)
         kdrama_data = search_kdrama(title)
@@ -226,7 +218,7 @@ def add_kdrama_by_name(request):
     if not kdrama_data:
         return Response({"error": "Drama not found"}, status=status.HTTP_404_NOT_FOUND)
 
-    # 2) Per-user duplicate check (by tmdb_id if available, else fall back to title)
+    # Per-user duplicate check (by tmdb_id if available, else title)
     existing = None
     if kdrama_data.get("tmdb_id"):
         existing = Drama.objects.filter(user=request.user, tmdb_id=kdrama_data["tmdb_id"]).first()
@@ -236,19 +228,19 @@ def add_kdrama_by_name(request):
     if existing:
         return Response({"error": "You've already added this drama."}, status=status.HTTP_400_BAD_REQUEST)
 
-    # 3) Best-effort OST lookup (must not fail creation)
+    # Best-effort OST lookup (must not fail creation)
     try:
         ost_url = get_ost_playlist_url(kdrama_data["title"])
     except Exception:
         ost_url = None
 
-    # 4) Parse year safely
+    # Parse year safely
     try:
         release_year = int(kdrama_data.get("release_year")) if kdrama_data.get("release_year") else None
     except (TypeError, ValueError):
         release_year = None
 
-    # 5) Create Drama
+    # Create Drama
     drama = Drama.objects.create(
         user=request.user,
         title=kdrama_data.get("title") or title,
@@ -260,7 +252,7 @@ def add_kdrama_by_name(request):
         OST_playlist=ost_url,
     )
 
-    # 6) Attach genres
+    # Attach genres
     for name in kdrama_data.get("genre_names", []):
         if not name:
             continue
