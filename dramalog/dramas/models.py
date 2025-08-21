@@ -30,6 +30,8 @@ class Drama(models.Model):
     OST_playlist = models.URLField(blank=True)
     pinterest_board_url = models.URLField(blank=True, null=True)
     tmdb_id = models.IntegerField(null=True, blank=True, db_index=True)
+    original_language = models.CharField(max_length=10, blank=True, null=True, db_index=True)
+    original_language_name = models.CharField(max_length=50, blank=True, null=True)
     class Meta:
         unique_together = [('user','tmdb_id')]  # optional
 

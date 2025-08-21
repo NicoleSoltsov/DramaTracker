@@ -7,6 +7,21 @@ load_dotenv()
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 TMDB_BASE = "https://api.themoviedb.org/3"
 
+def _resolve_language_fields(detail_data):
+    code = detail_data.get("original_language")
+    lang_name = None
+    for sl in (detail_data.get("spoken_languages") or []):
+        if sl.get("iso_639_1") == code:
+            # prefer english_name if available, else name
+            lang_name = sl.get("english_name") or sl.get("name")
+            break
+    if not lang_name and (detail_data.get("spoken_languages") or []):
+        # fallback to first language's english_name/name
+        first = detail_data["spoken_languages"][0]
+        lang_name = first.get("english_name") or first.get("name")
+    return code, lang_name
+
+
 def search_kdrama(title):
     url = f"{TMDB_BASE}/search/tv"
     params = {
@@ -28,6 +43,7 @@ def search_kdrama(title):
 
         if detail_response.status_code == 200:
             detail_data = detail_response.json()
+            lang_code, lang_name = _resolve_language_fields(detail_data)
             return {
                 "title": first.get("name"), 
                 "description": first.get("overview", "") or "",
@@ -35,7 +51,9 @@ def search_kdrama(title):
                 "release_year": (first.get("first_air_date") or "")[:4] if first.get("first_air_date") else None,
                 "tmdb_id": tmdb_id,
                 "total_episodes": detail_data.get("number_of_episodes", 0),
-                "genre_names": [g["name"] for g in detail_data.get("genres", [])] 
+                "genre_names": [g["name"] for g in detail_data.get("genres", [])],
+                "original_language": lang_code,
+                "original_language_name": lang_name,
             }
 
     return None
@@ -73,6 +91,7 @@ def fetch_kdrama_by_tmdb_id(tmdb_id: int):
     if r.status_code != 200:
         return None
     d = r.json()
+    lang_code, lang_name = _resolve_language_fields(d)
     return {
         "title": d.get("name"),
         "description": d.get("overview") or "",
@@ -81,6 +100,8 @@ def fetch_kdrama_by_tmdb_id(tmdb_id: int):
         "tmdb_id": tmdb_id,
         "total_episodes": d.get("number_of_episodes", 0),
         "genre_names": [g["name"] for g in d.get("genres", [])],
+        "original_language": lang_code,
+        "original_language_name": lang_name,
     }
 
 def get_tv_seasons(tmdb_id: int, language: str = "en-US"):

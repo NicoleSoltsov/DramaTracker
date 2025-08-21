@@ -96,6 +96,12 @@ class DramaViewSet(viewsets.ModelViewSet):
             wanted = [g.strip() for g in genre_names.split(',') if g.strip()]
             qs = qs.filter(genres__name__in=wanted).distinct()
 
+        #Language   
+        language_param = (params.get('language') or '').strip()
+        if language_param:
+            wanted_langs = [c.strip() for c in language_param.split(',') if c.strip()]
+            qs = qs.filter(original_language__in=wanted_langs)
+
         # Length
         length = (params.get('length') or '').strip().lower()
         if length == 'short':
@@ -137,6 +143,30 @@ class DramaViewSet(viewsets.ModelViewSet):
                 qs = qs.order_by('-latest_update', '-id')
 
         return qs
+    @action(detail=False, methods=["GET"], url_path="my-languages")
+    def my_languages(self, request):
+        """
+        Returns distinct language codes (and names) used by THIS user's dramas.
+        Response: [{"code":"ko","name":"Korean"}, ...]
+        """
+        rows = (
+            Drama.objects
+            .filter(user=request.user)
+            .exclude(original_language__isnull=True)
+            .exclude(original_language='')
+            .order_by('original_language')
+            .values_list('original_language', 'original_language_name')
+            .distinct()
+        )
+        # Dedup by code while keeping a stable order
+        out = []
+        seen = set()
+        for code, name in rows:
+            if code in seen:
+                continue
+            seen.add(code)
+            out.append({"code": code, "name": name or code})
+        return Response(out, status=200)
 
     @action(detail=False, methods=["POST"], url_path="bulk-delete")
     def bulk_delete(self, request):
@@ -250,6 +280,8 @@ def add_kdrama_by_name(request):
         total_episodes=kdrama_data.get("total_episodes") or 0,
         tmdb_id=kdrama_data.get("tmdb_id"),
         OST_playlist=ost_url,
+        original_language=kdrama_data.get("original_language"),
+        original_language_name=kdrama_data.get("original_language_name"),
     )
 
     # Attach genres
